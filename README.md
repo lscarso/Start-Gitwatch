@@ -22,7 +22,7 @@ powershell: 4.0
  3. Validate the path is a `git` repository
  4. Validate the time duration
  5. Find the current `HEAD` commit, if one doesn't exist an initial empty commit will be created
- 6. Run `git status` every *n* seconds (default: 5 seconds)
+ 6. Run `git status` every *n* seconds (default: 2 seconds)
  7. If `git status` is not empty, add all files/directories and commit with the *autosave* commit message
  8. Print output of list changes (hash, message, stats)
  9. On exit, show an abbreviated list of autosaved commits
@@ -30,13 +30,13 @@ powershell: 4.0
 ## Configuration
 ```shell
 # git-watch.sh
-duration_in_seconds=5
+duration_in_seconds=2
 autosave_message="autosave"
 ```
 
 ```powershell
 # git-watch.ps1
-$duration_in_seconds = 5
+$duration_in_seconds = 2
 $autosave_message = "autosave"
 ```
 
