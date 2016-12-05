@@ -1,120 +1,168 @@
-# http://dereknewton.com/2011/05/monitoring-file-system-changes-with-powershell/
-# http://superuser.com/questions/226828/how-to-monitor-a-folder-and-trigger-a-command-line-action-when-a-file-is-created
-# http://jnotify.sourceforge.net/index.html
+﻿Param(
+    [ValidateScript({Test-Path $_ -PathType ‘Container’})]
+    [String]$PathToMonitor = 'C:\Users\Luca\Documents\Git\',
+    [ValidateScript({Get-Command $_ -errorAction SilentlyContinue})]
+    [String]$gitPath = 'C:\Data\GitPortable\App\Git\bin\git',
+    [Switch]$Verbose
+)
 
-$gitPath = "C:\Data\GitPortable\App\Git\bin"
-$env:path+=";$gitPath"
-$Script:excludedItems = ".git"
-
-if (-Not (Get-Command git -errorAction SilentlyContinue)) {
-  Write-Output "Error: git is not installed"
-  Exit 1
+$global:gitwatch = @{
+	git = $gitPath
+	dir = $PathToMonitor
+	debug = $Verbose
 }
 
-if ($args.Count -eq 0) {
-  $target_dir = $PSScriptRoot
-} else {
-  $target_dir = $Args[0]
-}
 
-if (-Not (Test-Path $target_dir)) {
-  Write-Output "Error: Invalid directory '$target_dir'"
-  Exit 1
-}
-
-$duration_in_seconds = 2
-$autosave_message = "autosave"
-
-$action = {
-    Write-Host "Action Started"
-    $path = $eventArgs.FullPath
-    $event = $eventARgs.ChangeType
-    $watcher.EnableRaisingEvents = $False
-    If (-not $path.Contains('.git')) {
-        Write-Host "$event - $path"
-        Write-Host "git add -A ."
-        Start-Process "git add -A ." -wait
-        Write-Host 'git commit'
-        Start-Process "git commit -am $autosave_message" -wait
-        #git log --format="%C(auto)[$current_branch %h] %s" -n 1 --stat
-        Start-Process "git pull" -wait
-        Start-Process "git push" -wait
-        $watcher.EnableRaisingEvents = $true
-    }
-
-}
-
-function getCurrentDate() {
- $currentDate = Get-Date
- $currentDate = "{0:yyyy'-'MM'-'dd'T'HH':'mm':'ss'Z'}" -f $currentDate.ToUniversalTime()
- return $currentDate
-}
-
-try {
-    Push-Location $target_dir
-
+try{
+    Push-Location $global:gitwatch.dir
     if (-Not (Test-Path ".git")) {
-        Write-Output "Error: Invalid git repository '$target_dir'"
+        Write-Host "Error: Invalid git repository '$global:gitwatch.dir'"
+        Pop-Location
         Exit 1
     }
+    Pop-Location
 
-    if ($duration_in_seconds -lt 0) {
-        Write-Output "Error: Invalid duration '$duration_in_seconds', value must be >= 0";
-        Exit 2
-    }
-
-    ### SET FOLDER TO WATCH + FILES TO WATCH + SUBFOLDERS YES/NO
-    Write-Output "Enabling FileSystem Watcher on $target_dir"
-    $watcher = New-Object System.IO.FileSystemWatcher
-    $watcher.Path = $target_dir
-    #$watcher.Filter = "*.*"
+    $watcher = New-Object 'System.IO.FileSystemWatcher'
+    $watcher.Path = $global:gitwatch.dir
     $watcher.IncludeSubdirectories = $true
-    $watcher.NotifyFilter�=�[IO.NotifyFilters]'FileName,�LastWrite'
-    $watcher.EnableRaisingEvents = $true
+    $watcher.NotifyFilter = [IO.NotifyFilters]'FileName, LastWrite'
 
-    ### DEFINE ACTIONS AFTER AN EVENT IS DETECTED
-  
-
-    ### DECIDE WHICH EVENTS SHOULD BE WATCHED 
-    $changed = Register-ObjectEvent $watcher "Changed" -Action $action
-    $created = Register-ObjectEvent $watcher "Created" -Action $action
-    $deleted = Register-ObjectEvent $watcher "Deleted" -Action $action
-    $renamed = Register-ObjectEvent $watcher "Renamed" -Action $action
-  
-  
-  
-    $base_commit = git rev-parse HEAD 2>$null
-    if ($LASTEXITCODE -eq 128) {
-        Write-Output "Warning: Creating initial commit for new git repository"
-        git commit --allow-empty -m "initial commit"
-        $base_commit = git rev-parse HEAD 2>$null
+    $changed = Register-ObjectEvent $watcher 'Changed' -Action {
+	    try {
+            $watcher.EnableRaisingEvents = $false
+            Get-Event | Remove-Event
+		    $path = $eventArgs.FullPath
+		    if (-not $path.Contains('.git')) {
+			    Push-Location $global:gitwatch.dir
+                & $global:gitwatch.git add $path
+			    & $global:gitwatch.git commit -m "Autosave: $path changed."
+			    if ($global:gitwatch.debug) {
+				    Write-Host "Changed: $path"
+			    }
+                $gitstatus = $(& $global:gitwatch.git pull)
+			    if ($global:gitwatch.debug) {
+                    Write-Host "Git Pull: $gitstatus"
+                }
+                $gitstatus =$(& $global:gitwatch.git push)
+  			    if ($global:gitwatch.debug) {
+                    Write-Host "Git Push : $gitstatus"
+                }
+                Pop-Location
+		    }
+	    } catch {
+		    Write-Host "Exception: $_"
+	    } finally {
+            $watcher.EnableRaisingEvents = $true
+        }
     }
 
-    $base_commit = $base_commit.Substring(0, 7)
-    $current_date = getCurrentDate
+    $created = Register-ObjectEvent $watcher 'Created' -Action {
+	    try {
+            $watcher.EnableRaisingEvents = $false
+            Get-Event | Remove-Event
+		    $path = $eventArgs.FullPath
+		    if (-not $path.Contains("\.git")) {
+                Push-Location $global:gitwatch.dir
+			    & $global:gitwatch.git add $path
+			    & $global:gitwatch.git commit -m "Autosave: $path created."
+			    if ($global:gitwatch.debug) {
+				    Write-Host "Created: $path"
+			    }
+                & $global:gitwatch.git pull
+                & $global:gitwatch.git push
+                Pop-Location
+		    }
+	    } catch {
+		    Write-Host "Exception: $_"
+	    } finally {
+            $watcher.EnableRaisingEvents = $true
+        }
+    }
 
-    $script_name = $MyInvocation.MyCommand.Name
-    $repository = git rev-parse --show-toplevel
-    Write-Output "$script_name
+    $deleted = Register-ObjectEvent $watcher 'Deleted' -Action {
+	    try {
+            $watcher.EnableRaisingEvents = $false
+            Get-Event | Remove-Event
+		    $path = $eventArgs.FullPath
+		    if (-not $path.Contains('.git')) {
+                Push-Location $global:gitwatch.dir
+			    & $global:gitwatch.git rm -rf $path
+			    & $global:gitwatch.git commit -m "Autosave: $Path removed."
+			    if ($global:gitwatch.debug) {
+				    Write-Host "Deleted: $path"
+			    }
+                & $global:gitwatch.git pull
+                & $global:gitwatch.git push
+                Pop-Location
+		    }
+	    } catch {
+		    Write-Host "Exception: $_"
+	    } finally {
+            $watcher.EnableRaisingEvents = $true
+        }
+    }
+
+    $renamed = Register-ObjectEvent $watcher 'Renamed' -Action {
+	    try {
+            $watcher.EnableRaisingEvents = $false
+            Get-Event | Remove-Event
+		    $oldPath = $eventArgs.OldFullPath
+		    $path = $eventArgs.FullPath
+		    # TODO: Check whether file was moved from or inside to repository.
+		    if (-not $path.Contains('.git')) {
+                Push-Location $global:gitwatch.dir 
+			    & $global:gitwatch.git mv $oldPath $path
+			    & $global:gitwatch.git commit -m "Autosave: $oldPath renamed."
+			    if ($global:gitwatch.debug) {
+				    Write-Host "Renamed: $oldPath → $path"
+			    }
+                & $global:gitwatch.git pull
+                & $global:gitwatch.git push
+                Pop-Location
+		    }
+	    } catch {
+		    Write-Host "Exception: $_"
+	    } finally {
+            $watcher.EnableRaisingEvents = $true
+        }
+    }
+
+    $base_commit = $(& $global:gitwatch.git rev-parse HEAD 2>$null)
+    if ($LASTEXITCODE -eq 128) {
+        Write-Host "Warning: Creating initial commit for new git repository"
+        & $global:gitwatch.git commit --allow-empty -m "initial commit"
+        $base_commit = & $global:gitwatch.git rev-parse HEAD 2>$null
+    }
+    $base_commit = $base_commit.Substring(0, 7)
+
+    $repository = & $global:gitwatch.git rev-parse --show-toplevel
+    Write-Host "$script_name
 -------------------------------------------------------------
-     Started: $current_date
-    Duration: Every $duration_in_seconds second(s)
+     Started: $(Get-date)
   Repository: $repository ($base_commit)
 -------------------------------------------------------------"
 
-    while($true){
-        sleep 2
+    $gitstatus = & $global:gitwatch.git pull
+    if ($global:gitwatch.debug) {
+        Write-Host "Git Pull: $gitstatus"
     }
-    #pause
+    if ((-Not [string]::IsNullOrEmpty([string]$(& $global:gitwatch.git status --porcelain)))){
+        $gitstatus = & $global:gitwatch.git push
+        if ($global:gitwatch.debug) {
+            Write-Host "Git Push : $gitstatus"
+        }
+    }
+
+    $watcher.EnableRaisingEvents = $true
+
+    Wait-Event
 
 } finally {
-    Write-Output "Exit..."
+    Write-Host "Exit..."
     Unregister-Event $changed.Id
     Unregister-Event $created.Id
     Unregister-Event $deleted.Id
     Unregister-Event $renamed.Id
-    
-    #git log "$base_commit...HEAD" --format="%C(auto) %h %s (%cd)" --date=relative
-    Pop-Location
+    Get-Event | Remove-Event
 }
 
