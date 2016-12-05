@@ -25,6 +25,24 @@ if (-Not (Test-Path $target_dir)) {
 $duration_in_seconds = 2
 $autosave_message = "autosave"
 
+$action = {
+    Write-Host "Action Started"
+    $path = $eventArgs.FullPath
+    $event = $eventARgs.ChangeType
+    $watcher.EnableRaisingEvents = $False
+    If (-not $path.Contains('.git')) {
+        Write-Host "$event - $path"
+        Write-Host "git add -A ."
+        Start-Process "git add -A ." -wait
+        Write-Host 'git commit'
+        Start-Process "git commit -am $autosave_message" -wait
+        #git log --format="%C(auto)[$current_branch %h] %s" -n 1 --stat
+        Start-Process "git pull" -wait
+        Start-Process "git push" -wait
+        $watcher.EnableRaisingEvents = $true
+    }
+
+}
 
 function getCurrentDate() {
  $currentDate = Get-Date
@@ -55,27 +73,7 @@ try {
     $watcher.EnableRaisingEvents = $true
 
     ### DEFINE ACTIONS AFTER AN EVENT IS DETECTED
-    $action = {
-        $watcher.EnableRaisingEvents = $False
-        $path = $eventArgs.FullPath
-        If (-not $path.Contains('.git')) {
-            Write-Host "$($eventARgs.ChangeType) - $($eventArgs.FullPath)"
-            #$files_changed = (git status)
-            #write-host $files_changed
-            #if (-Not [string]::IsNullOrEmpty($files_changed)) {
-            #$current_branch = git rev-parse --abbrev-ref HEAD
-            Write-Host 'git add -A .'
-            &"git" "add" "-A" "."
-            Write-Host 'git commit'
-            &"git commit -am $autosave_message"
-
-            #git log --format="%C(auto)[$current_branch %h] %s" -n 1 --stat
-            &"git pull"
-            &"git push"
-            $watcher.EnableRaisingEvents = $true
-            #}
-        }
-    }     
+  
 
     ### DECIDE WHICH EVENTS SHOULD BE WATCHED 
     $changed = Register-ObjectEvent $watcher "Changed" -Action $action
