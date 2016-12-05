@@ -1,9 +1,0 @@
-// Place your settings in this file to overwrite default and user settings.
-{
-    // The proxy setting to use. If not set will be taken from the http_proxy and https_proxy environment variables
-    "http.proxy": "http://[fe80::20c:29ff:fe40:fb2]:8123",
-    //"http.proxy": "http://10.33.128.200:8080",
-    
-    // Path to the git executable
-    "git.path": "C:\\Data\\GitPortable\\App\\Git\\Bin\\git.exe"
-}
