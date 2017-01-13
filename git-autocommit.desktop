@@ -1,0 +1,11 @@
+#!/usr/bin/env xdg-open
+[Desktop Entry]
+Type=Application
+Exec=/home/luca/Sources/Development/git-autocommit/git-autocommit
+Path=/home/luca/Sources/Personal
+Hidden=false
+X-GNOME-Autostart-enabled=true
+X-GNOME-Autostart-Delay=10
+Name=git-autocommit
+Comment=instant messenging client
+
